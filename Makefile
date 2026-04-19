@@ -1,4 +1,4 @@
-NAME := nec_srv1
+NAME := nec1
 ARCH ?= $(shell uname -m | sed -e 's/aarch64/arm64/' -e 's/armv7l/arm/' -e 's/x86_64/x86/')
 BPF_CLANG := clang
 BPF_CFLAGS := -O2 -g -target bpf -D__TARGET_ARCH_$(ARCH) -Wall -Werror -Wno-unused-value
@@ -11,10 +11,10 @@ BPF_OBJS := bpf/xdp_local.o bpf/xdp_wan.o
 
 .PHONY: all clean
 
-all: $(NAME) $(BPF_OBJS)
+all: $(NAME)
 
-$(NAME): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+$(NAME): $(OBJS) $(BPF_OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
 main.o: main.c inc/lab.h
 	$(CC) $(CFLAGS) -c -o $@ $<
