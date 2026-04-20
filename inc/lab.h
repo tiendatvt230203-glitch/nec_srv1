@@ -46,6 +46,19 @@ struct lab_zc_port {
 	int ifindex;
 };
 
+struct lab_stats {
+	uint64_t rx_loc;
+	uint64_t rx_wan;
+	uint64_t mid_to_wan;
+	uint64_t mid_to_loc;
+	uint64_t tx_loc_ok;
+	uint64_t tx_loc_fail;
+	uint64_t tx_wan_ok;
+	uint64_t tx_wan_fail;
+	int last_tx_loc_errno;
+	int last_tx_wan_errno;
+};
+
 struct lab_pair {
 	void *bufs;
 	size_t bufsize;
@@ -58,6 +71,7 @@ struct lab_pair {
 	struct bpf_object *bpf_wan;
 	uint8_t xdp_loc_on;
 	uint8_t xdp_wan_on;
+	struct lab_stats *stats;
 };
 
 int lab_ring_init(struct lab_ring *r, uint32_t cap);
@@ -85,9 +99,11 @@ struct lab_ctx {
 	struct lab_ring wan_to_mid;
 	struct lab_ring w_to_wan;
 	struct lab_ring w_to_loc;
+	struct lab_stats stats;
 	pthread_t th_loc;
 	pthread_t th_mid;
 	pthread_t th_wan;
+	pthread_t th_stats;
 };
 
 int lab_run(struct lab_ctx *ctx, const char *loc_if, const char *wan_if,
