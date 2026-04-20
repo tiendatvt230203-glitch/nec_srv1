@@ -1,5 +1,6 @@
 #include <pthread.h>
 #include <sched.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -97,11 +98,17 @@ static void *mid_worker(void *arg)
 	setaffinity(LAB_CPU_MID);
 	while (!ctx->stop) {
 		if (lab_ring_try_pop(&ctx->ing_to_mid, &j) == 0) {
+			fprintf(stderr, "[MID] TO_WAN addr=%lu len=%u\n",
+				(unsigned long)j.umem_addr, j.len);
+			fflush(stderr);
 			rewrite_eth(&ctx->zc, j.umem_addr, LAB_DIR_TO_WAN);
 			lab_ring_push_retry(&ctx->w_to_wan, &j, &ctx->stop);
 			continue;
 		}
 		if (lab_ring_try_pop(&ctx->wan_to_mid, &j) == 0) {
+			fprintf(stderr, "[MID] TO_LOC addr=%lu len=%u\n",
+				(unsigned long)j.umem_addr, j.len);
+			fflush(stderr);
 			rewrite_eth(&ctx->zc, j.umem_addr, LAB_DIR_TO_LOC);
 			lab_ring_push_retry(&ctx->w_to_loc, &j, &ctx->stop);
 			continue;

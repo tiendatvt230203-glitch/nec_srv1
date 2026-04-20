@@ -303,8 +303,8 @@ void lab_pair_close(struct lab_pair *p)
 	}
 }
 
-static int lab_recv_port(struct lab_zc_port *port, uint32_t *lens,
-			 uint64_t *addrs, int max)
+static int lab_recv_port(struct lab_zc_port *port, const char *tag,
+			 uint32_t *lens, uint64_t *addrs, int max)
 {
 	uint32_t idx;
 	unsigned int n;
@@ -322,40 +322,60 @@ static int lab_recv_port(struct lab_zc_port *port, uint32_t *lens,
 
 		addrs[i] = d->addr;
 		lens[i] = d->len;
+		fprintf(stderr, "[RX %s] addr=%lu len=%u\n", tag,
+			(unsigned long)d->addr, d->len);
 	}
+	fflush(stderr);
 	xsk_ring_cons__release(&port->rx, n);
 	return (int)n;
 }
 
 int lab_recv_loc(struct lab_pair *p, uint32_t *lens, uint64_t *addrs, int max)
 {
-	return lab_recv_port(&p->loc, lens, addrs, max);
+	return lab_recv_port(&p->loc, "loc", lens, addrs, max);
 }
 
 int lab_recv_wan(struct lab_pair *p, uint32_t *lens, uint64_t *addrs, int max)
 {
-	return lab_recv_port(&p->wan, lens, addrs, max);
+	return lab_recv_port(&p->wan, "wan", lens, addrs, max);
 }
 
-static int lab_tx_one(struct lab_zc_port *port, uint64_t addr, uint32_t len)
+static int lab_tx_one(struct lab_zc_port *port, const char *tag,
+		      uint64_t addr, uint32_t len)
 {
 	uint32_t idx;
+	int r;
+	int sr;
+	int se;
 
-	if (xsk_ring_prod__reserve(&port->tx, 1, &idx) != 1)
+	r = xsk_ring_prod__reserve(&port->tx, 1, &idx);
+	if (r != 1) {
+		fprintf(stderr, "[TX %s] reserve=%d FAIL addr=%lu len=%u\n",
+			tag, r, (unsigned long)addr, len);
+		fflush(stderr);
 		return -1;
+	}
 	xsk_ring_prod__tx_desc(&port->tx, idx)->addr = addr;
 	xsk_ring_prod__tx_desc(&port->tx, idx)->len = len;
 	xsk_ring_prod__submit(&port->tx, 1);
-	(void)sendto(xsk_socket__fd(port->xsk), NULL, 0, MSG_DONTWAIT, NULL, 0);
+	errno = 0;
+	sr = sendto(xsk_socket__fd(port->xsk), NULL, 0, MSG_DONTWAIT, NULL, 0);
+	se = errno;
+	fprintf(stderr,
+		"[TX %s] submit ok addr=%lu len=%u sendto=%d errno=%d (%s) nw=%d\n",
+		tag, (unsigned long)addr, len, sr, se,
+		se ? strerror(se) : "ok",
+		xsk_ring_prod__needs_wakeup(&port->tx));
+	fflush(stderr);
 	return 0;
 }
 
 int lab_tx_loc(struct lab_pair *p, uint64_t addr, uint32_t len)
 {
-	return lab_tx_one(&p->loc, addr, len);
+	return lab_tx_one(&p->loc, "loc", addr, len);
 }
 
 int lab_tx_wan(struct lab_pair *p, uint64_t addr, uint32_t len)
 {
-	return lab_tx_one(&p->wan, addr, len);
+	return lab_tx_one(&p->wan, "wan", addr, len);
 }
