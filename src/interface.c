@@ -1,9 +1,6 @@
-#include <errno.h>
 #include <net/if.h>
 #include <linux/if_link.h>
 #include <linux/if_xdp.h>
-#include <sched.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -232,12 +229,6 @@ int lab_pair_open(struct lab_pair *p, const char *loc_if, const char *wan_if,
 	    lab_xskmap_bind(p->wan.xsk, bpf_map__fd(mw)))
 		goto err_xdp;
 
-	fprintf(stderr,
-		"[nec] init ok loc=%s(ifindex=%d,xsk_fd=%d) wan=%s(ifindex=%d,xsk_fd=%d) xsks_map_fd=%d wan_xsks_map_fd=%d\n",
-		loc_if, p->loc.ifindex, xsk_socket__fd(p->loc.xsk),
-		wan_if, p->wan.ifindex, xsk_socket__fd(p->wan.xsk),
-		bpf_map__fd(ml), bpf_map__fd(mw));
-	fflush(stderr);
 	return 0;
 
 err_xdp:
@@ -307,8 +298,8 @@ void lab_pair_close(struct lab_pair *p)
 	}
 }
 
-static int lab_recv_port(struct lab_zc_port *port, uint64_t *counter,
-			 uint32_t *lens, uint64_t *addrs, int max)
+static int lab_recv_port(struct lab_zc_port *port, uint32_t *lens,
+			 uint64_t *addrs, int max)
 {
 	uint32_t idx;
 	unsigned int n;
@@ -328,59 +319,38 @@ static int lab_recv_port(struct lab_zc_port *port, uint64_t *counter,
 		lens[i] = d->len;
 	}
 	xsk_ring_cons__release(&port->rx, n);
-	if (counter)
-		*counter += n;
 	return (int)n;
 }
 
 int lab_recv_loc(struct lab_pair *p, uint32_t *lens, uint64_t *addrs, int max)
 {
-	return lab_recv_port(&p->loc, p->stats ? &p->stats->rx_loc : NULL,
-			     lens, addrs, max);
+	return lab_recv_port(&p->loc, lens, addrs, max);
 }
 
 int lab_recv_wan(struct lab_pair *p, uint32_t *lens, uint64_t *addrs, int max)
 {
-	return lab_recv_port(&p->wan, p->stats ? &p->stats->rx_wan : NULL,
-			     lens, addrs, max);
+	return lab_recv_port(&p->wan, lens, addrs, max);
 }
 
-static int lab_tx_one(struct lab_zc_port *port, uint64_t *ok, uint64_t *fail,
-		      int *last_errno, uint64_t addr, uint32_t len)
+static int lab_tx_one(struct lab_zc_port *port, uint64_t addr, uint32_t len)
 {
 	uint32_t idx;
 
-	if (xsk_ring_prod__reserve(&port->tx, 1, &idx) != 1) {
-		if (fail)
-			(*fail)++;
+	if (xsk_ring_prod__reserve(&port->tx, 1, &idx) != 1)
 		return -1;
-	}
 	xsk_ring_prod__tx_desc(&port->tx, idx)->addr = addr;
 	xsk_ring_prod__tx_desc(&port->tx, idx)->len = len;
 	xsk_ring_prod__submit(&port->tx, 1);
-	errno = 0;
 	(void)sendto(xsk_socket__fd(port->xsk), NULL, 0, MSG_DONTWAIT, NULL, 0);
-	if (last_errno)
-		*last_errno = errno;
-	if (ok)
-		(*ok)++;
 	return 0;
 }
 
 int lab_tx_loc(struct lab_pair *p, uint64_t addr, uint32_t len)
 {
-	struct lab_stats *s = p->stats;
-
-	return lab_tx_one(&p->loc, s ? &s->tx_loc_ok : NULL,
-			  s ? &s->tx_loc_fail : NULL,
-			  s ? &s->last_tx_loc_errno : NULL, addr, len);
+	return lab_tx_one(&p->loc, addr, len);
 }
 
 int lab_tx_wan(struct lab_pair *p, uint64_t addr, uint32_t len)
 {
-	struct lab_stats *s = p->stats;
-
-	return lab_tx_one(&p->wan, s ? &s->tx_wan_ok : NULL,
-			  s ? &s->tx_wan_fail : NULL,
-			  s ? &s->last_tx_wan_errno : NULL, addr, len);
+	return lab_tx_one(&p->wan, addr, len);
 }
